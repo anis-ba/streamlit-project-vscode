@@ -3,6 +3,12 @@ import tensorflow as tf
 import streamlit as st
 import os
 import shutil
+from sklearn.linear_model import Ridge, Lasso, LinearRegression, ElasticNet
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor # Import the standard scikit-learn RandomForestRegressor
+from xgboost import XGBRegressor
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+
 
 # Set the main title of the Streamlit application
 st.title("Prédiction des Émissions de CO2 des Véhicules")
@@ -95,3 +101,14 @@ else:
     # On n'affiche l'avertissement que si l'utilisateur a déjà uploadé quelque chose
     if uploaded_files or os.listdir(models_dir):
         st.warning(f"Fichier modèle Deep Learning introuvable : {dl_model_filename}")
+
+# Section pour la suppression des fichiers uploadés
+st.sidebar.subheader("Suppression des fichiers")
+if st.sidebar.button("Supprimer les fichiers uploadés"):
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+        st.sidebar.success("Fichiers supprimés avec succès.")
+        # Recréer le dossier vide si nécessaire
+        os.makedirs(temp_dir)
+    else:
+        st.sidebar.info("Aucun fichier à supprimer.")
