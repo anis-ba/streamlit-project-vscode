@@ -6,7 +6,7 @@
       "type": "python",
       "request": "launch",
       "module": "streamlit",
-      "args": ["run", "streamlit_app.py"],
+      "args": ["run  streamlit_app.py --server.maxUploadSize 900"],
       "console": "integratedTerminal"
     }
   ]
