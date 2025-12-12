@@ -42,9 +42,7 @@ if uploaded_files:
     st.sidebar.success(f"{len(uploaded_files)} fichiers chargés dans l'application.")
 else:
     # Option 2 : Chemin local (si vous testez sur votre propre PC)
-    st.sidebar.info("Ou spécifiez un chemin local si vous exécutez en local:")
-    # Le chemin par défaut est vide pour éviter les erreurs Colab
-    models_dir = st.sidebar.text_input("Chemin du dossier local", temp_dir)
+    models_dir = st.sidebar.text_input("Ou spécifiez un chemin local si vous exécutez en local:", temp_dir)
 # --- MODIFICATION END ---
 
 dl_model_filename = 'deep_learning_model.keras'
