@@ -129,69 +129,75 @@ if test_file is not None:
         st.dataframe(df_test.head())
 
         # Sélection de la variable cible
-        target_col = st.selectbox("Sélectionnez la colonne cible (vérité terrain)", df_test.columns)
+        # target_col = st.selectbox("Sélectionnez la colonne cible (vérité terrain)", df_test.columns)
+        target_col = "emission_CO2_WLTP"
+        st.info(f"Colonne cible définie automatiquement : {target_col}")
 
-        if st.button("Lancer l'évaluation"):
-            X_test = df_test.drop(columns=[target_col])
-            y_test = df_test[target_col]
-            
-            results = []
+        # Vérifier si la colonne existe
+        if target_col not in df_test.columns:
+             st.error(f"La colonne cible '{target_col}' est introuvable dans le fichier CSV chargé. Veuillez vérifier votre fichier.")
+        else:
+            if st.button("Lancer l'évaluation"):
+                X_test = df_test.drop(columns=[target_col])
+                y_test = df_test[target_col]
 
-            # 1. Évaluation des modèles Scikit-learn / Joblib
-            for name, model in models.items():
-                try:
-                    y_pred = model.predict(X_test)
-                    
-                    mae = mean_absolute_error(y_test, y_pred)
-                    mse = mean_squared_error(y_test, y_pred)
-                    rmse = np.sqrt(mse)
-                    r2 = r2_score(y_test, y_pred)
-                    
-                    results.append({
-                        "Modèle": name,
-                        "MAE": mae,
-                        "MSE": mse,
-                        "RMSE": rmse,
-                        "R²": r2
-                    })
-                except Exception as e:
-                    st.error(f"Erreur lors de l'évaluation du modèle {name}: {e}")
+                results = []
 
-            # 2. Évaluation du modèle Deep Learning (si chargé)
-            if 'dl_model' in locals() and dl_model is not None:
-                try:
-                    # Prédiction avec Keras (attention aux types de données)
-                    # .flatten() est utilisé car Keras retourne souvent un tableau 2D (N, 1)
-                    y_pred_dl = dl_model.predict(X_test).flatten()
-                    
-                    mae = mean_absolute_error(y_test, y_pred_dl)
-                    mse = mean_squared_error(y_test, y_pred_dl)
-                    rmse = np.sqrt(mse)
-                    r2 = r2_score(y_test, y_pred_dl)
-                    
-                    results.append({
-                        "Modèle": "Deep Learning (Keras)",
-                        "MAE": mae,
-                        "MSE": mse,
-                        "RMSE": rmse,
-                        "R²": r2
-                    })
-                except Exception as e:
-                    st.error(f"Erreur lors de l'évaluation du modèle Deep Learning : {e}")
+                # 1. Évaluation des modèles Scikit-learn / Joblib
+                for name, model in models.items():
+                    try:
+                        y_pred = model.predict(X_test)
 
-            # Affichage des résultats
-            if results:
-                results_df = pd.DataFrame(results)
-                st.subheader("Tableau des performances")
-                st.dataframe(results_df.style.format({"MAE": "{:.4f}", "MSE": "{:.4f}", "RMSE": "{:.4f}", "R²": "{:.4f}"}))
-                
-                # Identifier le meilleur modèle (basé sur le RMSE le plus bas)
-                if not results_df.empty:
-                    best_model_idx = results_df['RMSE'].idxmin()
-                    best_model_row = results_df.loc[best_model_idx]
-                    st.success(f"🏆 Le meilleur modèle est **{best_model_row['Modèle']}** avec un RMSE de **{best_model_row['RMSE']:.4f}**.")
-            else:
-                st.warning("Aucun modèle n'a pu être évalué correctement.")
+                        mae = mean_absolute_error(y_test, y_pred)
+                        mse = mean_squared_error(y_test, y_pred)
+                        rmse = np.sqrt(mse)
+                        r2 = r2_score(y_test, y_pred)
+
+                        results.append({
+                            "Modèle": name,
+                            "MAE": mae,
+                            "MSE": mse,
+                            "RMSE": rmse,
+                            "R²": r2
+                        })
+                    except Exception as e:
+                        st.error(f"Erreur lors de l'évaluation du modèle {name}: {e}")
+
+                # 2. Évaluation du modèle Deep Learning (si chargé)
+                if 'dl_model' in locals() and dl_model is not None:
+                    try:
+                        # Prédiction avec Keras (attention aux types de données)
+                        # .flatten() est utilisé car Keras retourne souvent un tableau 2D (N, 1)
+                        y_pred_dl = dl_model.predict(X_test).flatten()
+
+                        mae = mean_absolute_error(y_test, y_pred_dl)
+                        mse = mean_squared_error(y_test, y_pred_dl)
+                        rmse = np.sqrt(mse)
+                        r2 = r2_score(y_test, y_pred_dl)
+
+                        results.append({
+                            "Modèle": "Deep Learning (Keras)",
+                            "MAE": mae,
+                            "MSE": mse,
+                            "RMSE": rmse,
+                            "R²": r2
+                        })
+                    except Exception as e:
+                        st.error(f"Erreur lors de l'évaluation du modèle Deep Learning : {e}")
+
+                # Affichage des résultats
+                if results:
+                    results_df = pd.DataFrame(results)
+                    st.subheader("Tableau des performances")
+                    st.dataframe(results_df.style.format({"MAE": "{:.4f}", "MSE": "{:.4f}", "RMSE": "{:.4f}", "R²": "{:.4f}"}))
+
+                    # Identifier le meilleur modèle (basé sur le RMSE le plus bas)
+                    if not results_df.empty:
+                        best_model_idx = results_df['RMSE'].idxmin()
+                        best_model_row = results_df.loc[best_model_idx]
+                        st.success(f"🏆 Le meilleur modèle est **{best_model_row['Modèle']}** avec un RMSE de **{best_model_row['RMSE']:.4f}**.")
+                else:
+                    st.warning("Aucun modèle n'a pu être évalué correctement.")
 
     except Exception as e:
         st.error(f"Erreur lors de la lecture du fichier CSV : {e}")
