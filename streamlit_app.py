@@ -1,13 +1,17 @@
+#streamlit run  streamlit_app.py --server.maxUploadSize 900
 import joblib
 import tensorflow as tf
 import streamlit as st
 import os
 import shutil
+import pandas as pd
+import numpy as np
 from sklearn.linear_model import Ridge, Lasso, LinearRegression, ElasticNet
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor # Import the standard scikit-learn RandomForestRegressor
 from xgboost import XGBRegressor
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
 # Set the main title of the Streamlit application
@@ -26,7 +30,7 @@ if not os.path.exists(temp_dir):
 # Option 1 : Upload via l'interface (fonctionne partout)
 st.sidebar.subheader("Charger les modèles")
 uploaded_files = st.sidebar.file_uploader(
-    "Déposez vos fichiers .joblib et .keras ici", 
+    "Déposez vos fichiers .joblib et .keras ici",
     accept_multiple_files=True,
     type=['joblib', 'keras', 'h5']
 )
@@ -60,7 +64,7 @@ if os.path.exists(models_dir):
     files_in_dir = os.listdir(models_dir)
     if not files_in_dir and not uploaded_files:
         st.warning("Aucun fichier trouvé. Veuillez uploader vos modèles via la barre latérale.")
-    
+
     for filename in files_in_dir:
         if filename.endswith('.joblib'):
             file_path = os.path.join(models_dir, filename)
@@ -110,3 +114,84 @@ if st.sidebar.button("Supprimer les fichiers uploadés"):
         os.makedirs(temp_dir)
     else:
         st.sidebar.info("Aucun fichier à supprimer.")
+
+# --- SECTION EVALUATION ---
+st.divider()
+st.header("Évaluation et Comparaison des Modèles")
+
+# Upload du fichier de test
+test_file = st.file_uploader("Chargez votre fichier CSV de test pour l'évaluation", type=["csv"])
+
+if test_file is not None:
+    try:
+        df_test = pd.read_csv(test_file)
+        st.write("Aperçu des données de test :")
+        st.dataframe(df_test.head())
+
+        # Sélection de la variable cible
+        target_col = st.selectbox("Sélectionnez la colonne cible (vérité terrain)", df_test.columns)
+
+        if st.button("Lancer l'évaluation"):
+            X_test = df_test.drop(columns=[target_col])
+            y_test = df_test[target_col]
+            
+            results = []
+
+            # 1. Évaluation des modèles Scikit-learn / Joblib
+            for name, model in models.items():
+                try:
+                    y_pred = model.predict(X_test)
+                    
+                    mae = mean_absolute_error(y_test, y_pred)
+                    mse = mean_squared_error(y_test, y_pred)
+                    rmse = np.sqrt(mse)
+                    r2 = r2_score(y_test, y_pred)
+                    
+                    results.append({
+                        "Modèle": name,
+                        "MAE": mae,
+                        "MSE": mse,
+                        "RMSE": rmse,
+                        "R²": r2
+                    })
+                except Exception as e:
+                    st.error(f"Erreur lors de l'évaluation du modèle {name}: {e}")
+
+            # 2. Évaluation du modèle Deep Learning (si chargé)
+            if 'dl_model' in locals() and dl_model is not None:
+                try:
+                    # Prédiction avec Keras (attention aux types de données)
+                    # .flatten() est utilisé car Keras retourne souvent un tableau 2D (N, 1)
+                    y_pred_dl = dl_model.predict(X_test).flatten()
+                    
+                    mae = mean_absolute_error(y_test, y_pred_dl)
+                    mse = mean_squared_error(y_test, y_pred_dl)
+                    rmse = np.sqrt(mse)
+                    r2 = r2_score(y_test, y_pred_dl)
+                    
+                    results.append({
+                        "Modèle": "Deep Learning (Keras)",
+                        "MAE": mae,
+                        "MSE": mse,
+                        "RMSE": rmse,
+                        "R²": r2
+                    })
+                except Exception as e:
+                    st.error(f"Erreur lors de l'évaluation du modèle Deep Learning : {e}")
+
+            # Affichage des résultats
+            if results:
+                results_df = pd.DataFrame(results)
+                st.subheader("Tableau des performances")
+                st.dataframe(results_df.style.format({"MAE": "{:.4f}", "MSE": "{:.4f}", "RMSE": "{:.4f}", "R²": "{:.4f}"}))
+                
+                # Identifier le meilleur modèle (basé sur le RMSE le plus bas)
+                if not results_df.empty:
+                    best_model_idx = results_df['RMSE'].idxmin()
+                    best_model_row = results_df.loc[best_model_idx]
+                    st.success(f"🏆 Le meilleur modèle est **{best_model_row['Modèle']}** avec un RMSE de **{best_model_row['RMSE']:.4f}**.")
+            else:
+                st.warning("Aucun modèle n'a pu être évalué correctement.")
+
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture du fichier CSV : {e}")
