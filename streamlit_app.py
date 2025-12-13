@@ -1,4 +1,3 @@
-#streamlit run  streamlit_app.py --server.maxUploadSize 900
 import joblib
 import tensorflow as tf
 import streamlit as st
@@ -32,7 +31,8 @@ st.sidebar.subheader("Charger les modèles")
 uploaded_files = st.sidebar.file_uploader(
     "Déposez vos fichiers .joblib et .keras ici",
     accept_multiple_files=True,
-    type=['joblib', 'keras', 'h5']
+    type=['joblib', 'keras', 'h5'],
+    key="model_uploader"  # Clé ajoutée pour le reset
 )
 
 models_dir = temp_dir # Par défaut, on pointe vers le dossier temporaire
@@ -104,23 +104,30 @@ else:
     if uploaded_files or os.listdir(models_dir):
         st.warning(f"Fichier modèle Deep Learning introuvable : {dl_model_filename}")
 
-# Section pour la suppression des fichiers uploadés
-st.sidebar.subheader("Suppression des fichiers")
-if st.sidebar.button("Supprimer les fichiers uploadés"):
+# Section pour la réinitialisation de l'application
+st.sidebar.subheader("Gestion")
+if st.sidebar.button("Reinitialiser"):
+    # 1. Nettoyage du dossier temporaire (fichiers physiques)
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
-        st.sidebar.success("Fichiers supprimés avec succès.")
-        # Recréer le dossier vide si nécessaire
         os.makedirs(temp_dir)
-    else:
-        st.sidebar.info("Aucun fichier à supprimer.")
+    
+    # 2. Réinitialisation des widgets via le session_state
+    if "model_uploader" in st.session_state:
+        del st.session_state["model_uploader"]
+    if "test_uploader" in st.session_state:
+        del st.session_state["test_uploader"]
+        
+    st.sidebar.success("Application réinitialisée.")
+    st.rerun()
 
 # --- SECTION EVALUATION ---
 st.divider()
 st.header("Évaluation et Comparaison des Modèles")
 
 # Upload du fichier de test
-test_file = st.file_uploader("Chargez votre fichier CSV de test pour l'évaluation", type=["csv"])
+# Clé ajoutée pour le reset
+test_file = st.file_uploader("Chargez votre fichier CSV de test pour l'évaluation", type=["csv"], key="test_uploader")
 
 if test_file is not None:
     try:
