@@ -1,210 +1,206 @@
 import joblib
 import tensorflow as tf
 import streamlit as st
+import altair as alt
 import os
 import shutil
 import pandas as pd
+import matplotlib
 import numpy as np
-from sklearn.linear_model import Ridge, Lasso, LinearRegression, ElasticNet
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor # Import the standard scikit-learn RandomForestRegressor
-from xgboost import XGBRegressor
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.pipeline import make_pipeline
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-
-# Set the main title of the Streamlit application
-st.title("Prédiction des Émissions de CO2 des Véhicules")
-
-# Add a sidebar to the application
-st.sidebar.title("Navigation et Paramètres")
-st.sidebar.header("Configuration des Modèles")
-
-# --- MODIFICATION START ---
-# Création d'un dossier temporaire pour stocker les modèles uploadés
-temp_dir = "temp_models"
-if not os.path.exists(temp_dir):
-    os.makedirs(temp_dir)
-
-# Option 1 : Upload via l'interface (fonctionne partout)
-st.sidebar.subheader("Charger les modèles")
-uploaded_files = st.sidebar.file_uploader(
-    "Déposez vos fichiers .joblib et .keras ici",
-    accept_multiple_files=True,
-    type=['joblib', 'keras', 'h5'],
-    key="model_uploader"  # Clé ajoutée pour le reset
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(
+    page_title="Prédiction CO2",
+    page_icon="🚗",
+    layout="wide"
 )
 
-models_dir = temp_dir # Par défaut, on pointe vers le dossier temporaire
+# --- TITRE ET INTRODUCTION ---
+st.title="🚗 Prédiction des Émissions de CO2"
+st.markdown("""
+**Comparateur de Performance de Modèles de Machine Learning**""")
+st.markdown("""
+Cette application permet d'évaluer et de comparer automatiquement plusieurs modèles prédictifs sur un jeu de données de test.
+""")
 
-# Si des fichiers sont uploadés, on les sauvegarde localement
-if uploaded_files:
-    for uploaded_file in uploaded_files:
-        file_path = os.path.join(temp_dir, uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-    st.sidebar.success(f"{len(uploaded_files)} fichiers chargés dans l'application.")
-else:
-    # Option 2 : Chemin local (si vous testez sur votre propre PC)
-    models_dir = st.sidebar.text_input("Ou spécifiez un chemin local si vous exécutez en local:", temp_dir)
-# --- MODIFICATION END ---
-
+# --- SETUP ET UTILITAIRES ---
+models_dir = "temp_models"
 dl_model_filename = 'deep_learning_model.keras'
 
-# Dictionnaire pour stocker les modèles chargés
-models = {}
+if "startup_cleaned" not in st.session_state:
+    if os.path.exists(models_dir):
+        try: shutil.rmtree(models_dir)
+        except: pass
+    st.session_state["startup_cleaned"] = True
 
-# Chargement de tous les modèles .joblib présents dans le dossier
+if not os.path.exists(models_dir):
+    os.makedirs(models_dir)
+
+def reset_application():
+    if os.path.exists(models_dir):
+        shutil.rmtree(models_dir)
+        os.makedirs(models_dir)
+    for key in ["model_uploader", "test_uploader"]:
+        if key in st.session_state:
+            del st.session_state[key]
+
+@st.cache_resource
+def load_joblib_model(path):
+    return joblib.load(path)
+
+@st.cache_resource
+def load_dl_model(path):
+    return tf.keras.models.load_model(path)
+
+@st.cache_data
+def load_data(file):
+    return pd.read_csv(file)
+
+# --- SIDEBAR : GESTION DES MODÈLES ---
+with st.sidebar:
+    st.header="⚙️ Configuration"
+
+    with st.expander("ℹ️ Mode d'emploi", expanded=False):
+        st.markdown("""
+        1. **Déposez vos modèles** ci-dessous (.joblib, .keras).
+        2. **Chargez un fichier CSV** contenant les features et la colonne cible.
+        3. **Lancez l'évaluation** pour voir le classement.
+        """)
+
+    uploaded_files = st.file_uploader(
+        "Importer des modèles",
+        accept_multiple_files=True,
+        type=['joblib', 'keras', 'h5'],
+        key="model_uploader",
+        help="Glissez vos fichiers de modèles ici"
+    )
+
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            file_path = os.path.join(models_dir, uploaded_file.name)
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+        st.success(f"✅ {len(uploaded_files)} modèles chargés.")
+
+    st.divider()
+    st.button("🗑️ Réinitialiser l'application", on_click=reset_application, type="primary")
+
+# --- CHARGEMENT DES MODÈLES ---
+all_models = {}
 if os.path.exists(models_dir):
-    @st.cache_resource
-    def load_joblib_model(path):
-        return joblib.load(path)
-
-    # Lister les fichiers et charger ceux avec l'extension .joblib
     files_in_dir = os.listdir(models_dir)
-    if not files_in_dir and not uploaded_files:
-        st.warning("Aucun fichier trouvé. Veuillez uploader vos modèles via la barre latérale.")
 
+    # 1. Scikit-learn
     for filename in files_in_dir:
         if filename.endswith('.joblib'):
-            file_path = os.path.join(models_dir, filename)
-            model_name = os.path.splitext(filename)[0]
             try:
-                models[model_name] = load_joblib_model(file_path)
-                st.success(f"Modèle '{model_name}' chargé avec succès.")
-            except Exception as e:
-                st.error(f"Erreur lors du chargement de {filename}: {e}")
-else:
-    st.error(f"Le dossier spécifié est introuvable : {models_dir}")
+                all_models[os.path.splitext(filename)[0]] = load_joblib_model(os.path.join(models_dir, filename))
+            except Exception: pass
 
-# Tentative de définir rf_pipeline
-rf_pipeline = None
-for name, model in models.items():
-    if 'random_forest' in name.lower():
-        rf_pipeline = model
-        break
+    # 2. Keras
+    dl_path = os.path.join(models_dir, dl_model_filename)
+    if os.path.exists(dl_path):
+        try:
+            all_models["Deep Learning (Keras)"] = load_dl_model(dl_path)
+        except Exception: pass
 
-# Code Keras
-@st.cache_resource
-def load_dl_model(filename):
-    return tf.keras.models.load_model(filename)
+    if all_models:
+        st.sidebar.info(f"🧠 {len(all_models)} modèles prêts")
+    elif not uploaded_files:
+        st.info("👈 Veuillez commencer par charger vos modèles dans la barre latérale.")
 
-# Construction du chemin complet pour le modèle Keras
-dl_model_path = os.path.join(models_dir, dl_model_filename)
-
-# Vérification spécifique pour Keras
-if os.path.exists(dl_model_path):
-    try:
-        dl_model = load_dl_model(dl_model_path)
-        st.success("Deep Learning model loaded successfully!")
-    except Exception as e:
-         st.error(f"Erreur lors du chargement du modèle Deep Learning: {e}")
-else:
-    # On n'affiche l'avertissement que si l'utilisateur a déjà uploadé quelque chose
-    if uploaded_files or os.listdir(models_dir):
-        st.warning(f"Fichier modèle Deep Learning introuvable : {dl_model_filename}")
-
-# Section pour la réinitialisation de l'application
-st.sidebar.subheader("Gestion")
-if st.sidebar.button("Reinitialiser"):
-    # 1. Nettoyage du dossier temporaire (fichiers physiques)
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-        os.makedirs(temp_dir)
-    
-    # 2. Réinitialisation des widgets via le session_state
-    if "model_uploader" in st.session_state:
-        del st.session_state["model_uploader"]
-    if "test_uploader" in st.session_state:
-        del st.session_state["test_uploader"]
-        
-    st.sidebar.success("Application réinitialisée.")
-    st.rerun()
-
-# --- SECTION EVALUATION ---
+# --- SECTION ÉVALUATION ---
 st.divider()
-st.header("Évaluation et Comparaison des Modèles")
+st.header="📊 Benchmark"
 
-# Upload du fichier de test
-# Clé ajoutée pour le reset
-test_file = st.file_uploader("Chargez votre fichier CSV de test pour l'évaluation", type=["csv"], key="test_uploader")
+col_upload, col_action = st.columns([1, 2])
+
+with col_upload:
+    test_file = st.file_uploader("Fichier de test (CSV)", type=["csv"], key="test_uploader")
 
 if test_file is not None:
     try:
-        df_test = pd.read_csv(test_file)
-        st.write("Aperçu des données de test :")
-        st.dataframe(df_test.head())
-
-        # Sélection de la variable cible
-        # target_col = st.selectbox("Sélectionnez la colonne cible (vérité terrain)", df_test.columns)
+        df_test = load_data(test_file)
         target_col = "emission_CO2_WLTP"
-        st.info(f"Colonne cible définie automatiquement : {target_col}")
 
-        # Vérifier si la colonne existe
-        if target_col not in df_test.columns:
-             st.error(f"La colonne cible '{target_col}' est introuvable dans le fichier CSV chargé. Veuillez vérifier votre fichier.")
-        else:
-            if st.button("Lancer l'évaluation"):
-                X_test = df_test.drop(columns=[target_col])
-                y_test = df_test[target_col]
+        with col_action:
+            st.write(f"**Données chargées :** {df_test.shape[0]} lignes, {df_test.shape[1]} colonnes")
+            if target_col not in df_test.columns:
+                st.error(f"❌ Colonne cible '{target_col}' introuvable.")
+            else:
+                # 1. On vérifie si le bouton est cliqué et on met à jour l'état
+                if st.button("🚀 Lancer l'évaluation", type="primary", use_container_width=True):
+                    st.session_state['evaluation_active'] = True
+        
+        # 2. On vérifie la variable de session au lieu du bouton directement
+        if target_col in df_test.columns and st.session_state.get('evaluation_active', False):
+            X_test = df_test.drop(columns=[target_col])
+            y_test = df_test[target_col]
+            results = []
 
-                results = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
-                # 1. Évaluation des modèles Scikit-learn / Joblib
-                for name, model in models.items():
-                    try:
-                        y_pred = model.predict(X_test)
+            for i, (name, model) in enumerate(all_models.items()):
+                status_text.text(f"Évaluation de : {name}...")
+                try:
+                    y_pred = np.ravel(model.predict(X_test))
+                    results.append({
+                        "Modèle": name,
+                        "MAE": mean_absolute_error(y_test, y_pred),
+                        "MSE": mean_squared_error(y_test, y_pred),
+                        "RMSE": np.sqrt(mean_squared_error(y_test, y_pred)),
+                        "R²": r2_score(y_test, y_pred)
+                    })
+                except Exception as e:
+                    st.error(f"Erreur {name}: {e}")
+                progress_bar.progress((i + 1) / len(all_models))
 
-                        mae = mean_absolute_error(y_test, y_pred)
-                        mse = mean_squared_error(y_test, y_pred)
-                        rmse = np.sqrt(mse)
-                        r2 = r2_score(y_test, y_pred)
+            progress_bar.empty()
+            status_text.empty()
 
-                        results.append({
-                            "Modèle": name,
-                            "MAE": mae,
-                            "MSE": mse,
-                            "RMSE": rmse,
-                            "R²": r2
-                        })
-                    except Exception as e:
-                        st.error(f"Erreur lors de l'évaluation du modèle {name}: {e}")
+            if results:
+                results_df = pd.DataFrame(results)
 
-                # 2. Évaluation du modèle Deep Learning (si chargé)
-                if 'dl_model' in locals() and dl_model is not None:
-                    try:
-                        # Prédiction avec Keras (attention aux types de données)
-                        # .flatten() est utilisé car Keras retourne souvent un tableau 2D (N, 1)
-                        y_pred_dl = dl_model.predict(X_test).flatten()
+                # --- AFFICHAGE DES RÉSULTATS ---
+                best_model = results_df.loc[results_df['RMSE'].idxmin()]
 
-                        mae = mean_absolute_error(y_test, y_pred_dl)
-                        mse = mean_squared_error(y_test, y_pred_dl)
-                        rmse = np.sqrt(mse)
-                        r2 = r2_score(y_test, y_pred_dl)
+                st.subheader("🏆 Performances du Meilleur Modèle")
+                kpi1, kpi2, kpi3 = st.columns(3)
+                kpi1.metric("Modèle Gagnant", best_model['Modèle'])
+                kpi2.metric("RMSE (Erreur)", f"{best_model['RMSE']:.4f}", delta="Plus petit c'est mieux.", delta_color="inverse")
+                kpi3.metric("R² (Score)", f"{best_model['R²']:.4f}")
 
-                        results.append({
-                            "Modèle": "Deep Learning (Keras)",
-                            "MAE": mae,
-                            "MSE": mse,
-                            "RMSE": rmse,
-                            "R²": r2
-                        })
-                    except Exception as e:
-                        st.error(f"Erreur lors de l'évaluation du modèle Deep Learning : {e}")
+                st.divider()
 
-                # Affichage des résultats
-                if results:
-                    results_df = pd.DataFrame(results)
-                    st.subheader("Tableau des performances")
-                    st.dataframe(results_df.style.format({"MAE": "{:.4f}", "MSE": "{:.4f}", "RMSE": "{:.4f}", "R²": "{:.4f}"}))
+                # Vues détaillées
+                tab1, tab2, tab3 = st.tabs(["📈 Graphiques Comparatifs", "📄 Tableau Détaillé", "🔍 Données Brutes"])
 
-                    # Identifier le meilleur modèle (basé sur le RMSE le plus bas)
-                    if not results_df.empty:
-                        best_model_idx = results_df['RMSE'].idxmin()
-                        best_model_row = results_df.loc[best_model_idx]
-                        st.success(f"🏆 Le meilleur modèle est **{best_model_row['Modèle']}** avec un RMSE de **{best_model_row['RMSE']:.4f}**.")
-                else:
-                    st.warning("Aucun modèle n'a pu être évalué correctement.")
+                with tab1:
+                    metric = st.radio("Métrique à visualiser", ["RMSE", "R²", "MAE"], horizontal=True)
+                    sort_order = 'descending' if metric == 'R²' else 'ascending'
+
+                    chart = alt.Chart(results_df).mark_bar().encode(
+                        x=alt.X('Modèle', sort=alt.EncodingSortField(field=metric, order=sort_order), axis=alt.Axis(labelAngle=-0)),
+                        y=alt.Y(metric, title=metric),
+                        color=alt.Color('Modèle', legend=None),
+                        tooltip=['Modèle', metric]
+                    ).properties(height=300)
+                    st.altair_chart(chart, use_container_width=True)
+
+                with tab2:
+                    # Formatage uniquement des colonnes numériques pour éviter l'erreur sur le texte
+                    numeric_cols = ['MAE', 'MSE', 'RMSE', 'R²']
+                    st.dataframe(
+                        results_df.style.format({col: "{:.4f}" for col in numeric_cols})
+                        .background_gradient(subset=['RMSE', 'MAE'], cmap='Reds')
+                        .background_gradient(subset=['R²'], cmap='Greens'),
+                        use_container_width=True
+                    )
+
+                with tab3:
+                    st.write("Aperçu des données de test", df_test.head())
 
     except Exception as e:
-        st.error(f"Erreur lors de la lecture du fichier CSV : {e}")
+        st.error(f"Erreur lecture CSV : {e}")
