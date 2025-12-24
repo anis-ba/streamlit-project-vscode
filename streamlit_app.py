@@ -122,7 +122,7 @@ with col_upload:
 if test_file is not None:
     try:
         df_test = load_data(test_file)
-        target_col = "emission_CO2_WLTP"
+        target_col = "emission_co2_wltp"
 
         with col_action:
             st.write(f"**Données chargées :** {df_test.shape[0]} lignes, {df_test.shape[1]} colonnes")
