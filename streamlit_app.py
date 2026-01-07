@@ -41,12 +41,27 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITRE ET INTRODUCTION ---
-st.title("🚗 Prédiction des Émissions de CO2")
-st.markdown("""
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    st.title("🚗 Prédiction des Émissions de CO2")
+    st.markdown("""
 **Plateforme d'Évaluation et de Comparaison de Modèles de Machine Learning**
 """)
-st.markdown("""
+    st.markdown("""
 Analyse complète de la performance de modèles prédictifs pour estimer les émissions CO2 des véhicules.
+""")
+
+with col2:
+    if os.path.exists("assets/datascientstest_logo.png"):
+        st.image("assets/datascientstest_logo.png", use_container_width=True)
+
+st.divider()
+
+st.markdown("""
+**Réalisé par :** Anis BENAICHA et Shiva HEYDARIAN  
+**Promotion :** 2025/2026  
+**Formation Datascientest**
 """)
 
 # --- SETUP ET UTILITAIRES ---
